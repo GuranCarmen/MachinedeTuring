@@ -89,3 +89,149 @@ class TuringProgram:
             if action['state'] == state and action['read_values'] == read_values:
                 return action
         return None
+
+  # creem clasa TuringMachine
+    class TuringMachine(threading.Thread):
+      
+  # metoda constructor
+    [program] = TuringProgram ce va fi folosit pentru aceasta masina
+    [speed] = viteza cu care vom simula programul (in numar de pasi per secunda)/ in cazul in care vom avea o viteza de "-1", simularea va avea loc in timp real
+    [listener] = o functie care va fi apelata dupa fiecare pas, folosita pentru a arata simularea. Va primi urmatoarele argumente:
+                 [tm] = masina turing care va apela functia
+                 [step] = un umar ce specifica ultimul tip de pas facut de (STEP_READ, STEP_WRITE, STEP_MOVE, sau STEP_STATE pentru schimbari de stare)
+                 
+    def __init__(self, program=None, speed=4, listener=None):
+        threading.Thread.__init__(self)
+        
+        self.program = program
+        self.speed = speed
+        self.listener = listener
+        
+        self.should_continue = threading.Event() # permite sa punem pauza simularii
+                                                 # folosim clear() pentru pauza si set() pentru continuare
+                                                 
+  # metoda principala a masinii, care manevreaza intreaga simulare
+  
+    def run(self):
+        if self.program == None: raise RuntimeError("No program specified")
+
+        #pregateste o lista pentru a putea stoca pozitiile curente ale fiecarei benzi
+        #si apoi sa le umple cu pozitia initiala, 0
+        self.tapes_pos = list()                   
+        for i in range(len(self.program.tapes)):
+            self.tapes_pos.append(0)
+
+        # se asigura ca toate benzile au cel putin o valoare, pentru a preveni diverse probleme la citire/scriere
+        for tape in self.program.tapes:
+            if len(tape) == 0:
+                tape.append(self.program.symbol_blank)
+
+        self.current_state = self.program.state_initial
+        self.current_action = None
+        self.running = True
+        self.should_continue.set() 
+        
+        # bucla principala. ruleaza un ciclu Turing standard (citeste, scrie, muta, schimba starea) pana cand intalneste starea finala a programului
+        while self.running:
+            self.should_continue.wait()  #daca punem pauza masinii (prin should_continue.clear()),
+                                         #se va bloca pana cand se reia (should_continue.set())
+            self.read_step()
+            self.post_step(STEP_READ)
+
+            self.should_continue.wait()
+            self.write_step()
+            self.post_step(STEP_WRITE)
+
+            self.should_continue.wait()
+            self.move_step()
+            self.post_step(STEP_MOVE)
+
+            self.should_continue.wait()
+            self.state_change_step()
+            self.post_step(STEP_STATE)
+            
+  # ruleaza dupa fiecare pas al simularii. apeleaza listener pentru a notifica schimbarile, ridica o eroare, 
+    daca una va intalni ultimul pas, apoi va fi in repaus pentru o secunda, pentru ca utilizatorul sa poata urmari simularea
+      
+      def post_step(self, step_type):
+        if self.listener != None:
+            self.listener(self, step_type)
+            
+  # setam erorile folosind self.error in loc de a le creste direct numarandu-le in ordine pentru a permite ascultatorului
+    de a trata eroarea in sine deoarece, de altfelnu ar sti despre o eroare aparuta intr-un alt 
+    if hasattr(self, 'error'):
+            raise RuntimeError(self.error)
+    
+        if self.speed != -1:
+            time.sleep(1/float(self.speed))
+ 
+ # În etapa de citire, aparatul citește valoarea curentă din fiecare bandă, iar apoi se utilizează aceste valori și starea
+ curentă a mașinii pentru a căuta o acțiune corespunzătoare în lista programului
+ 
+   def read_step(self):
+        read_values = []
+        for tape_nr, tape in enumerate(self.program.tapes): 
+            read_values.append(tape[self.tapes_pos[tape_nr]]) 
+            
+        self.current_action = self.program.get_action(self.current_state, read_values)
+        if self.current_action == None:
+            self.error = "nici o actiune nu este definita pentru starea '%(state)s' si valorile (%(read)s)" \
+                         % dict(state=self.current_state, read=','.join(read_values))
+            self.running = False
+            
+  # scrie valori pe fiecare banda, dictate de catre actiunea curenta a programului
+    def write_step(self):
+        for tape_nr, tape in enumerate(self.program.tapes):
+              tape[self.tapes_pos[tape_nr]] = self.current_action['write_values'][tape_nr]
+              
+# muta fiecare banda conform cu starea curenta a actiunii
+   
+   def move_step(self):
+        for tape_nr, tape in enumerate(self.program.tapes):
+            direction = self.current_action['directions'][tape_nr]
+            if direction == self.program.dir_left:
+                if self.tapes_pos[tape_nr] <= 0:
+                    # daca atingem marginea stanga, introducem o noua valoare 
+                    tape.insert(0, self.program.symbol_blank)
+                    # si ne asiguram ca pozitia este la noua margine 0
+                    self.tapes_pos[tape_nr] = 0                
+                else: 
+                    self.tapes_pos[tape_nr] -= 1
+            elif direction == self.program.dir_right: 
+                self.tapes_pos[tape_nr] += 1
+                if self.tapes_pos[tape_nr] >= len(tape):
+                    #daca atingem marginea corecta, introducem o noua valoare
+                    tape.append(self.program.symbol_blank)
+            #daca nu: directia este  [dir_none]
+            
+  # Modifică starea aparatului la cel specificat de acțiunile curente [next_state]
+  
+    def state_change_step(self):
+        self.current_state = self.current_action['next_state']
+        if self.current_state == self.program.state_final:
+            self.running = False
+            
+ # cod test
+    if __name__ == "__main__":
+    tape = "0100101"
+    print("Initial value: "+tape)
+    
+    inversion = TuringProgram("Inversion")
+    inversion.set_tapes(list(tape))
+    inversion.set_actions("""init 0 1 > init
+                             init 1 0 > init
+                             init _ _ - halt""")
+
+    def print_tapes(tm, step_type):
+        if step_type == STEP_READ:
+            tcopy = list(tm.program.tapes[0])
+            pos = tm.tapes_pos[0]
+            tcopy.insert(pos, '[')
+            tcopy.insert(pos+2, ']')
+            print(''.join(tcopy))
+        elif step_type == STEP_STATE and not tm.running:
+            print("Final value (trimmed): " + (''.join(tm.program.tapes[0])).strip('_'))
+            
+    machine = TuringMachine(inversion, listener=print_tapes)
+    machine.start()
+    machine.join()
