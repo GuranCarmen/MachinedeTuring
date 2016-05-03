@@ -21,7 +21,7 @@ def make_layout_panel(parent, direction, *args, **kwargs):
 
 
 """
-Clasa principală a interfeței noastre grafice 
+Clasa principală a  interfeței noastre grafice 
 """
 class MainWindow(wx.Frame):
     
