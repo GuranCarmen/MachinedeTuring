@@ -17,4 +17,3 @@ Equipe: Guran Carmen Giorgiana, Mitrica Gina Maria et Tudor Ionela Adelina
 
 Le programme sera réalisé en Python.
 
-Fichier en cours, nous allons ajouter des détails que nous avançons avec le projet.
